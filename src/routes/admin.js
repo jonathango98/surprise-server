@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import jwt from 'jsonwebtoken';
 import archiver from 'archiver';
 import { Submission } from '../models/Submission.js';
 import { Setting } from '../models/Setting.js';
@@ -7,7 +8,34 @@ import { getPresignedGetUrl, listObjects, getObjectStream } from '../s3.js';
 
 const router = Router();
 
-// All admin routes require password auth
+// ---------------------------------------------------------------------------
+// POST /admin/login  (no auth required)
+// ---------------------------------------------------------------------------
+
+router.post('/login', async (req, res) => {
+  const { password } = req.body;
+
+  if (!password) {
+    return res.status(400).json({ error: 'password is required' });
+  }
+
+  if (password !== process.env.ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Invalid password' });
+  }
+
+  const token = jwt.sign(
+    { role: 'admin' },
+    process.env.ADMIN_JWT_SECRET,
+    { expiresIn: '24h' }
+  );
+
+  return res.json({ token });
+});
+
+// ---------------------------------------------------------------------------
+// All routes below require admin JWT
+// ---------------------------------------------------------------------------
+
 router.use(adminAuth);
 
 // ---------------------------------------------------------------------------

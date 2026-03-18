@@ -1,6 +1,8 @@
+import jwt from 'jsonwebtoken';
+
 /**
- * Admin auth middleware.
- * Expects: Authorization: Bearer <password>
+ * JWT admin authentication middleware.
+ * Expects: Authorization: Bearer <token>
  */
 export function adminAuth(req, res, next) {
   const authHeader = req.headers['authorization'];
@@ -9,11 +11,16 @@ export function adminAuth(req, res, next) {
     return res.status(401).json({ error: 'Missing or malformed Authorization header' });
   }
 
-  const password = authHeader.slice(7);
+  const token = authHeader.slice(7);
 
-  if (password !== process.env.ADMIN_PASSWORD) {
-    return res.status(401).json({ error: 'Invalid password' });
+  try {
+    const payload = jwt.verify(token, process.env.ADMIN_JWT_SECRET);
+    req.admin = payload;
+    next();
+  } catch (err) {
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Token expired' });
+    }
+    return res.status(401).json({ error: 'Invalid token' });
   }
-
-  next();
 }
