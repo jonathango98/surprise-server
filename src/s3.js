@@ -18,14 +18,15 @@ const BUCKET = () => process.env.S3_BUCKET_NAME;
  * @param {number} maxBytes - Maximum allowed content length in bytes
  * @param {number} expiresIn - URL expiry in seconds (default 15 min)
  */
-export async function getPresignedPutUrl(key, contentType, maxBytes, expiresIn = 900) {
+export async function getPresignedPutUrl(key, _contentType, _maxBytes, expiresIn = 900) {
   const command = new PutObjectCommand({
     Bucket: BUCKET(),
     Key: key,
-    ContentType: contentType,
-    // Note: Content-Length enforcement via presigned URL conditions is not
-    // natively supported by PutObject presigning in AWS SDK v3.
-    // The maxBytes limit is documented and enforced client-side / via bucket policy.
+    // Note: ContentType is intentionally excluded from the signature so S3 does not
+    // enforce a match against the browser's recorded MIME type (e.g. video/webm vs video/mp4).
+    // The browser still sends Content-Type with the XHR and S3 stores it on the object.
+    // Content-Length enforcement via presigned URL conditions is not natively supported
+    // by PutObject presigning in AWS SDK v3; enforced client-side / via bucket policy.
   });
 
   const url = await getSignedUrl(s3, command, { expiresIn });
