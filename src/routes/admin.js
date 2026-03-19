@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { spawn } from 'child_process';
 import jwt from 'jsonwebtoken';
 import archiver from 'archiver';
 import { Submission } from '../models/Submission.js';
@@ -210,6 +211,8 @@ router.get('/download', async (req, res) => {
 
     archive.pipe(res);
 
+    const conversionPromises = [];
+
     for (const obj of objects) {
       if (!obj.Key || obj.Key.endsWith('/')) {
         // Skip directory-like keys
@@ -218,13 +221,56 @@ router.get('/download', async (req, res) => {
 
       try {
         const stream = await getObjectStream(obj.Key);
-        const entryName = obj.Key.replace(prefix, '');
-        archive.append(stream, { name: entryName });
+        const rawEntryName = obj.Key.replace(prefix, '');
+
+        if (rawEntryName.endsWith('.webm')) {
+          // Convert WebM → MP4 via FFmpeg and collect the full buffer
+          // before appending, since archiver needs to know the size or
+          // the stream must end cleanly before the next entry.
+          const mp4EntryName = rawEntryName.replace(/\.webm$/, '.mp4');
+          const promise = new Promise((resolve) => {
+            const ffmpeg = spawn('ffmpeg', [
+              '-i', 'pipe:0',        // read from stdin
+              '-c:v', 'libx264',
+              '-preset', 'fast',
+              '-crf', '23',
+              '-c:a', 'aac',
+              '-movflags', 'frag_keyframe+empty_moov', // streamable MP4
+              '-f', 'mp4',
+              'pipe:1',              // write to stdout
+            ], { stdio: ['pipe', 'pipe', 'pipe'] });
+
+            const chunks = [];
+            ffmpeg.stdout.on('data', (chunk) => chunks.push(chunk));
+            ffmpeg.stderr.on('data', () => {}); // suppress ffmpeg logs
+            ffmpeg.on('close', (code) => {
+              if (code === 0 && chunks.length > 0) {
+                archive.append(Buffer.concat(chunks), { name: mp4EntryName });
+              } else {
+                console.error(`FFmpeg exited with code ${code} for ${obj.Key}`);
+              }
+              resolve();
+            });
+            ffmpeg.on('error', (err) => {
+              console.error(`FFmpeg spawn error for ${obj.Key}:`, err);
+              resolve();
+            });
+
+            stream.pipe(ffmpeg.stdin);
+            stream.on('error', () => ffmpeg.stdin.destroy());
+          });
+          conversionPromises.push(promise);
+        } else {
+          archive.append(stream, { name: rawEntryName });
+        }
       } catch (streamErr) {
         console.error(`Failed to stream object ${obj.Key}:`, streamErr);
         // Skip failed objects rather than aborting the whole ZIP
       }
     }
+
+    // Wait for all WebM → MP4 conversions to finish
+    await Promise.all(conversionPromises);
 
     await archive.finalize();
   } catch (err) {

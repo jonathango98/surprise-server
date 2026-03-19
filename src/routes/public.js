@@ -48,12 +48,12 @@ function buildIdentifier(firstName, lastName, location) {
  */
 function resolveClipKey(submission, prompt, baseKey) {
   if (!submission) {
-    return `${baseKey}.mp4`;
+    return `${baseKey}.webm`;
   }
 
   const isCompleted = submission.completedPrompts.includes(prompt);
   if (!isCompleted) {
-    return `${baseKey}.mp4`;
+    return `${baseKey}.webm`;
   }
 
   // Prompt already completed — this is a retake
@@ -61,11 +61,11 @@ function resolveClipKey(submission, prompt, baseKey) {
 
   if (!existingKey) {
     // Completed but no key stored — treat as fresh
-    return `${baseKey}.mp4`;
+    return `${baseKey}.webm`;
   }
 
   // Strip .mp4 extension, then look for trailing -<number>
-  const withoutExt = existingKey.replace(/\.mp4$/, '');
+  const withoutExt = existingKey.replace(/\.webm$/, '');
   const match = withoutExt.match(/-(\d+)$/);
 
   const currentRetakeNumber = match ? parseInt(match[1], 10) : 1;
@@ -160,7 +160,7 @@ router.post('/presign', presignRateLimiter, deadlineGuard, async (req, res) => {
     const baseKey = `sharon-bday/prompt-${promptNum}/${identifier}-p${promptNum}`;
     const s3Key = resolveClipKey(submission, promptNum, baseKey);
 
-    const uploadUrl = await getPresignedPutUrl(s3Key, 'video/mp4', 50 * 1024 * 1024);
+    const uploadUrl = await getPresignedPutUrl(s3Key, 'video/webm', 50 * 1024 * 1024);
 
     return res.json({ uploadUrl, s3Key });
   } catch (err) {
