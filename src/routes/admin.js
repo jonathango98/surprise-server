@@ -5,7 +5,7 @@ import archiver from 'archiver';
 import { Submission } from '../models/Submission.js';
 import { Setting } from '../models/Setting.js';
 import { adminAuth } from '../middleware/auth.js';
-import { getPresignedGetUrl, listObjects, getObjectStream } from '../s3.js';
+import { getPresignedGetUrl, listObjects, getObjectStream, deleteObject } from '../s3.js';
 
 const router = Router();
 
@@ -160,6 +160,41 @@ router.get('/submission/:identifier', async (req, res) => {
     });
   } catch (err) {
     console.error('GET /admin/submission/:identifier error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /admin/submission/:identifier/clip/:prompt
+// ---------------------------------------------------------------------------
+
+router.delete('/submission/:identifier/clip/:prompt', async (req, res) => {
+  const { identifier, prompt } = req.params;
+
+  try {
+    const sub = await Submission.findOne({ identifier });
+    if (!sub) return res.status(404).json({ message: 'Submission not found' });
+
+    const clipKey = `p${prompt}`;
+    const s3Key = sub.clips?.get(clipKey);
+
+    if (!s3Key) return res.status(404).json({ message: 'Clip not found' });
+
+    // Delete from S3
+    try {
+      await deleteObject(s3Key);
+    } catch (err) {
+      console.error('S3 delete failed:', err);
+    }
+
+    // Update DB
+    sub.clips.delete(clipKey);
+    sub.completedPrompts = sub.completedPrompts.filter(n => n !== Number(prompt));
+    await sub.save();
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('DELETE /admin/submission/:identifier/clip/:prompt error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

@@ -1,4 +1,4 @@
-import { S3Client, GetObjectCommand, PutObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { S3Client, GetObjectCommand, PutObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 export const s3 = new S3Client({
@@ -76,6 +76,18 @@ export async function listObjects(prefix) {
   } while (continuationToken);
 
   return objects;
+}
+
+/**
+ * Delete an S3 object by key.
+ * @param {string} key - S3 object key
+ */
+export async function deleteObject(key) {
+  const command = new DeleteObjectCommand({
+    Bucket: BUCKET(),
+    Key: key,
+  });
+  await s3.send(command);
 }
 
 /**
