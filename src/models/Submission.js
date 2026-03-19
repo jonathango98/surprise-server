@@ -22,6 +22,7 @@ const submissionSchema = new mongoose.Schema(
       default: {},
     },
     photos: { type: [photoSchema], default: [] },
+    status: { type: String, default: 'active' },
   },
   {
     timestamps: false,

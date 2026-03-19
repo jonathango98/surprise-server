@@ -88,7 +88,7 @@ router.post('/deadline', async (req, res) => {
 
 router.get('/submissions', async (req, res) => {
   try {
-    const submissions = await Submission.find({}).lean();
+    const submissions = await Submission.find({ status: { $ne: 'deleted' } }).lean();
 
     const result = submissions.map((s) => ({
       identifier: s.identifier,
@@ -160,6 +160,25 @@ router.get('/submission/:identifier', async (req, res) => {
     });
   } catch (err) {
     console.error('GET /admin/submission/:identifier error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /admin/submission/:identifier
+// ---------------------------------------------------------------------------
+
+router.delete('/submission/:identifier', async (req, res) => {
+  try {
+    const sub = await Submission.findOneAndUpdate(
+      { identifier: req.params.identifier },
+      { status: 'deleted' },
+      { new: true }
+    );
+    if (!sub) return res.status(404).json({ message: 'Submission not found' });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('DELETE /admin/submission/:identifier error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
