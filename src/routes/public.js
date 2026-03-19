@@ -20,10 +20,10 @@ function normalise(str) {
 
 /**
  * Build the submission identifier from name parts.
- * e.g. "John", "Doe", "Jakarta" → "john-doe-jakarta"
+ * e.g. "John", "Doe" → "john-doe"
  */
-function buildIdentifier(firstName, lastName, location) {
-  return [firstName, lastName, location]
+function buildIdentifier(firstName, lastName) {
+  return [firstName, lastName]
     .map((s) => normalise(s).replace(/\s+/g, '-'))
     .join('-');
 }
@@ -99,7 +99,7 @@ router.post('/session', async (req, res) => {
     return res.status(400).json({ error: 'firstName, lastName, and location are required' });
   }
 
-  const identifier = buildIdentifier(firstName, lastName, location);
+  const identifier = buildIdentifier(firstName, lastName);
 
   try {
     let submission = await Submission.findOne({ identifier });
