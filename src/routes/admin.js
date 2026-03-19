@@ -200,17 +200,67 @@ router.delete('/submission/:identifier/clip/:prompt', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// DELETE /admin/submission/:identifier/photo/:index
+// ---------------------------------------------------------------------------
+
+router.delete('/submission/:identifier/photo/:index', async (req, res) => {
+  const { identifier, index } = req.params;
+  const photoIndex = parseInt(index, 10);
+
+  try {
+    const sub = await Submission.findOne({ identifier });
+    if (!sub) return res.status(404).json({ message: 'Submission not found' });
+
+    if (isNaN(photoIndex) || photoIndex < 0 || photoIndex >= sub.photos.length) {
+      return res.status(404).json({ message: 'Photo not found' });
+    }
+
+    const s3Key = sub.photos[photoIndex].url;
+
+    // Delete from S3
+    try {
+      await deleteObject(s3Key);
+    } catch (err) {
+      console.error('S3 delete failed:', err);
+    }
+
+    // Remove from DB
+    sub.photos.splice(photoIndex, 1);
+    await sub.save();
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('DELETE /admin/submission/:identifier/photo/:index error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // DELETE /admin/submission/:identifier
 // ---------------------------------------------------------------------------
 
 router.delete('/submission/:identifier', async (req, res) => {
   try {
-    const sub = await Submission.findOneAndUpdate(
-      { identifier: req.params.identifier },
-      { status: 'deleted' },
-      { new: true }
-    );
+    const sub = await Submission.findOne({ identifier: req.params.identifier });
     if (!sub) return res.status(404).json({ message: 'Submission not found' });
+
+    // Delete all clips from S3
+    for (const s3Key of (sub.clips || new Map()).values()) {
+      try { await deleteObject(s3Key); } catch (err) { console.error('S3 clip delete failed:', err); }
+    }
+
+    // Delete all photos from S3
+    for (const photo of sub.photos || []) {
+      try { await deleteObject(photo.url); } catch (err) { console.error('S3 photo delete failed:', err); }
+    }
+
+    // Soft-delete the submission
+    sub.status = 'deleted';
+    sub.clips = new Map();
+    sub.photos = [];
+    sub.completedPrompts = [];
+    await sub.save();
+
     res.json({ success: true });
   } catch (err) {
     console.error('DELETE /admin/submission/:identifier error:', err);

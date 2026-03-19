@@ -107,8 +107,9 @@ router.post('/session', async (req, res) => {
     if (submission) {
       return res.json({
         isReturning: true,
-        completedPrompts: submission.completedPrompts,
         identifier: submission.identifier,
+        completedPrompts: submission.completedPrompts,
+        photoCount: submission.photos ? submission.photos.length : 0,
       });
     }
 
@@ -125,8 +126,9 @@ router.post('/session', async (req, res) => {
 
     return res.status(201).json({
       isReturning: false,
-      completedPrompts: [],
       identifier: submission.identifier,
+      completedPrompts: [],
+      photoCount: 0,
     });
   } catch (err) {
     console.error('POST /session error:', err);
