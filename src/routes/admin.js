@@ -269,6 +269,60 @@ router.delete('/submission/:identifier', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /admin/bucket
+// ---------------------------------------------------------------------------
+
+router.get('/bucket', async (req, res) => {
+  try {
+    const raw = await listObjects('');
+
+    const objects = await Promise.all(
+      raw
+        .filter((obj) => obj.Key && !obj.Key.endsWith('/'))
+        .map(async (obj) => {
+          let url = null;
+          try {
+            url = await getPresignedGetUrl(obj.Key, 3600);
+          } catch (err) {
+            console.error(`Failed to generate presigned URL for ${obj.Key}:`, err);
+          }
+          return {
+            key: obj.Key,
+            size: obj.Size,
+            lastModified: obj.LastModified,
+            url,
+          };
+        })
+    );
+
+    return res.json({ objects });
+  } catch (err) {
+    console.error('GET /admin/bucket error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /admin/bucket/file
+// ---------------------------------------------------------------------------
+
+router.delete('/bucket/file', async (req, res) => {
+  const { key } = req.body;
+
+  if (!key) {
+    return res.status(400).json({ error: 'key is required' });
+  }
+
+  try {
+    await deleteObject(key);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /admin/bucket/file error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /admin/download
 // ---------------------------------------------------------------------------
 
