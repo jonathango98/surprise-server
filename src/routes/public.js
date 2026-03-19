@@ -93,10 +93,10 @@ router.get('/deadline', async (req, res) => {
 // ---------------------------------------------------------------------------
 
 router.post('/session', async (req, res) => {
-  const { firstName, lastName, location } = req.body;
+  const { firstName, lastName } = req.body;
 
-  if (!firstName || !lastName || !location) {
-    return res.status(400).json({ error: 'firstName, lastName, and location are required' });
+  if (!firstName || !lastName) {
+    return res.status(400).json({ error: 'firstName and lastName are required' });
   }
 
   const identifier = buildIdentifier(firstName, lastName);
@@ -117,7 +117,6 @@ router.post('/session', async (req, res) => {
     submission = await Submission.create({
       firstName: normalise(firstName),
       lastName: normalise(lastName),
-      location: normalise(location),
       identifier,
       completedPrompts: [],
       clips: {},
