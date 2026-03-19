@@ -122,7 +122,9 @@ Check or create a submission session.
 ---
 
 #### `POST /presign`
-Generate S3 presigned PUT URL for a video clip.
+Generate S3 presigned PUT URL for a video clip upload.
+
+Contributors upload pre-recorded videos from their camera roll. The frontend validates the file (portrait orientation, ≤ 50 MB, within duration limit) before calling this endpoint.
 
 **Request:**
 ```json
@@ -135,7 +137,7 @@ Generate S3 presigned PUT URL for a video clip.
 **Logic:**
 - Check deadline — reject if past
 - Build S3 key: `sharon-bday/prompt-{n}/{identifier}-p{n}.mp4`
-- If retake (prompt already in `completedPrompts`): append `-{retakeCount+1}` suffix
+- If re-upload (prompt already in `completedPrompts`): append `-{retakeCount+1}` suffix
 - Generate presigned PUT URL (expires 15 min)
 - Return key + URL
 
@@ -148,7 +150,7 @@ Generate S3 presigned PUT URL for a video clip.
 ```
 
 **Rate limit:** 10 requests per IP per 10 minutes.
-**File size:** enforced via S3 presigned URL `Content-Length` condition (max 50MB).
+**File size:** enforced client-side (50 MB max). S3 presigned URL does not enforce content-type so any video format is accepted.
 
 ---
 
