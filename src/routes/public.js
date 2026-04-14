@@ -105,6 +105,24 @@ router.post('/session', async (req, res) => {
     let submission = await Submission.findOne({ identifier });
 
     if (submission) {
+      if (submission.status === 'deleted') {
+        // Reactivate the deleted submission
+        submission.status = 'active';
+        submission.firstName = normalise(firstName);
+        submission.lastName = normalise(lastName);
+        submission.completedPrompts = [];
+        submission.clips = new Map();
+        submission.photos = [];
+        await submission.save();
+
+        return res.status(201).json({
+          isReturning: false,
+          identifier: submission.identifier,
+          completedPrompts: [],
+          photoCount: 0,
+        });
+      }
+
       return res.json({
         isReturning: true,
         identifier: submission.identifier,
