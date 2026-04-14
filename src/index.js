@@ -4,6 +4,7 @@ import cors from 'cors';
 import { connectDB } from './db.js';
 import publicRouter from './routes/public.js';
 import adminRouter from './routes/admin.js';
+import galleryRouter from './routes/gallery.js';
 
 // ---------------------------------------------------------------------------
 // CORS configuration
@@ -47,6 +48,9 @@ app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 // Public routes
 app.use('/', publicRouter);
+
+// Gallery route (no auth)
+app.use('/', galleryRouter);
 
 // Admin routes
 app.use('/admin', adminRouter);
