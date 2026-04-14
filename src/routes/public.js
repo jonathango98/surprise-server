@@ -102,22 +102,29 @@ router.post('/session', async (req, res) => {
   const identifier = buildIdentifier(firstName, lastName);
 
   try {
-    let submission = await Submission.findOne({ identifier });
+    let submission = await Submission.findOne({ identifier }).lean();
 
     if (submission) {
       if (submission.status === 'deleted') {
         // Reactivate the deleted submission
-        submission.status = 'active';
-        submission.firstName = normalise(firstName);
-        submission.lastName = normalise(lastName);
-        submission.completedPrompts = [];
-        submission.clips = new Map();
-        submission.photos = [];
-        await submission.save();
+        await Submission.updateOne(
+          { identifier },
+          {
+            $set: {
+              status: 'active',
+              firstName: normalise(firstName),
+              lastName: normalise(lastName),
+              submittedAt: new Date(),
+              completedPrompts: [],
+              clips: {},
+              photos: [],
+            },
+          }
+        );
 
         return res.status(201).json({
           isReturning: false,
-          identifier: submission.identifier,
+          identifier,
           completedPrompts: [],
           photoCount: 0,
         });
