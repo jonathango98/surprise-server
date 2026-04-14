@@ -16,7 +16,7 @@ router.get('/gallery', async (_req, res) => {
 
     const cardPromises = submissions.flatMap((s) =>
       (s.photos || []).map(async (photo, i) => {
-        if (!photo.wish || !photo.url) return null;
+        if (!photo.url) return null;
         const photoUrl = await getPresignedGetUrl(photo.url, 3600);
         return {
           id: `${s.identifier}-${i}`,
