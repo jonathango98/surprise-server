@@ -32,9 +32,9 @@ function buildIdentifier(firstName, lastName) {
  * Determine the retake suffix for a new clip key.
  *
  * The current key stored in clips.p{n} follows the pattern:
- *   sharon-bday/prompt-1/identifier-p1.mp4          (first upload)
- *   sharon-bday/prompt-1/identifier-p1-2.mp4        (first retake)
- *   sharon-bday/prompt-1/identifier-p1-3.mp4        (second retake)
+ *   sharon-bday/prompt-1/identifier-p1.webm          (first upload)
+ *   sharon-bday/prompt-1/identifier-p1-2.webm        (first retake)
+ *   sharon-bday/prompt-1/identifier-p1-3.webm        (second retake)
  *
  * If the prompt has not been completed yet → no suffix (first upload).
  * If it has been completed → suffix is current retake number + 1,
@@ -43,8 +43,8 @@ function buildIdentifier(firstName, lastName) {
  *
  * @param {object|null} submission - Mongoose document or null
  * @param {number} prompt
- * @param {string} baseKey - e.g. "sharon-bday/prompt-1/identifier-p1" (no .mp4)
- * @returns {string} full S3 key including .mp4 extension
+ * @param {string} baseKey - e.g. "sharon-bday/prompt-1/identifier-p1" (no extension)
+ * @returns {string} full S3 key including .webm extension
  */
 function resolveClipKey(submission, prompt, baseKey) {
   if (!submission) {
@@ -64,14 +64,14 @@ function resolveClipKey(submission, prompt, baseKey) {
     return `${baseKey}.webm`;
   }
 
-  // Strip .mp4 extension, then look for trailing -<number>
-  const withoutExt = existingKey.replace(/\.webm$/, '');
+  // Strip extension, then look for trailing -<number>
+  const withoutExt = existingKey.replace(/\.\w+$/, '');
   const match = withoutExt.match(/-(\d+)$/);
 
   const currentRetakeNumber = match ? parseInt(match[1], 10) : 1;
   const newRetakeNumber = currentRetakeNumber + 1;
 
-  return `${baseKey}-${newRetakeNumber}.mp4`;
+  return `${baseKey}-${newRetakeNumber}.webm`;
 }
 
 // ---------------------------------------------------------------------------
