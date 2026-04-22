@@ -1,4 +1,5 @@
 import { S3Client, GetObjectCommand, PutObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { Readable } from 'stream';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 export const s3 = new S3Client({
@@ -86,6 +87,22 @@ export async function deleteObject(key) {
   const command = new DeleteObjectCommand({
     Bucket: BUCKET(),
     Key: key,
+  });
+  await s3.send(command);
+}
+
+/**
+ * Upload a buffer directly to S3.
+ * @param {string} key - S3 object key
+ * @param {Buffer} buffer - File contents
+ * @param {string} contentType - MIME type
+ */
+export async function uploadBuffer(key, buffer, contentType) {
+  const command = new PutObjectCommand({
+    Bucket: BUCKET(),
+    Key: key,
+    Body: buffer,
+    ContentType: contentType,
   });
   await s3.send(command);
 }

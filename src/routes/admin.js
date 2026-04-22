@@ -1,11 +1,32 @@
 import { Router } from 'express';
+import { readFile, unlink } from 'fs/promises';
+import { join } from 'path';
+import os from 'os';
+import { randomBytes } from 'crypto';
 
 import jwt from 'jsonwebtoken';
 import archiver from 'archiver';
+import multer from 'multer';
+import ffmpeg from 'fluent-ffmpeg';
+import ffmpegPath from 'ffmpeg-static';
 import { Submission } from '../models/Submission.js';
 import { Setting } from '../models/Setting.js';
 import { adminAuth } from '../middleware/auth.js';
-import { getPresignedGetUrl, listObjects, getObjectStream, deleteObject } from '../s3.js';
+import { getPresignedGetUrl, listObjects, getObjectStream, deleteObject, uploadBuffer } from '../s3.js';
+
+ffmpeg.setFfmpegPath(ffmpegPath);
+
+const upload = multer({
+  dest: os.tmpdir(),
+  limits: { fileSize: 500 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (/\.(mp4|mov)$/i.test(file.originalname) || ['video/mp4', 'video/quicktime'].includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only .mp4 and .mov files are allowed'));
+    }
+  },
+});
 
 const router = Router();
 
@@ -395,6 +416,80 @@ router.get('/download', async (req, res) => {
     }
 
     res.destroy(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /admin/upload-clip  — upload .mp4/.mov, convert to webm, save as clip
+// ---------------------------------------------------------------------------
+
+router.post('/upload-clip', (req, res, next) => {
+  upload.single('file')(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    next();
+  });
+}, async (req, res) => {
+  const { identifier, prompt } = req.body;
+  const file = req.file;
+
+  if (!identifier || !prompt || !file) {
+    if (file) await unlink(file.path).catch(() => {});
+    return res.status(400).json({ error: 'identifier, prompt, and file are required' });
+  }
+
+  const promptNum = parseInt(prompt, 10);
+  if (isNaN(promptNum) || promptNum < 1 || promptNum > 4) {
+    await unlink(file.path).catch(() => {});
+    return res.status(400).json({ error: 'prompt must be 1–4' });
+  }
+
+  const outputPath = join(os.tmpdir(), `${randomBytes(8).toString('hex')}.webm`);
+
+  try {
+    const sub = await Submission.findOne({ identifier });
+    if (!sub) {
+      await unlink(file.path).catch(() => {});
+      return res.status(404).json({ error: 'Submission not found' });
+    }
+
+    // Convert to webm
+    await new Promise((resolve, reject) => {
+      ffmpeg(file.path)
+        .outputFormat('webm')
+        .videoCodec('libvpx')
+        .audioCodec('libopus')
+        .on('end', resolve)
+        .on('error', reject)
+        .save(outputPath);
+    });
+
+    await unlink(file.path).catch(() => {});
+    const webmBuffer = await readFile(outputPath);
+    await unlink(outputPath).catch(() => {});
+
+    // Delete existing S3 clip for this prompt if present
+    const clipKey = `p${promptNum}`;
+    const existingKey = sub.clips?.get(clipKey);
+    if (existingKey) {
+      await deleteObject(existingKey).catch((err) => console.error('Failed to delete old clip:', err));
+    }
+
+    const s3Key = `sharon-bday/prompt-${promptNum}/${identifier}-p${promptNum}.webm`;
+    await uploadBuffer(s3Key, webmBuffer, 'video/webm');
+
+    sub.clips.set(clipKey, s3Key);
+    sub.markModified('clips');
+    if (!sub.completedPrompts.includes(promptNum)) {
+      sub.completedPrompts.push(promptNum);
+    }
+    await sub.save();
+
+    return res.json({ success: true, s3Key });
+  } catch (err) {
+    console.error('POST /admin/upload-clip error:', err);
+    await unlink(file.path).catch(() => {});
+    await unlink(outputPath).catch(() => {});
+    return res.status(500).json({ error: 'Failed to process video: ' + err.message });
   }
 });
 
