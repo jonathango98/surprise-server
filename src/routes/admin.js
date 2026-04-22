@@ -424,17 +424,30 @@ router.get('/download', async (req, res) => {
 // ---------------------------------------------------------------------------
 
 router.post('/upload-clip', (req, res, next) => {
+  console.log('[upload-clip] multer: receiving file...');
   upload.single('file')(req, res, (err) => {
     if (err) {
-      if (err.message === 'Request aborted') return; // client disconnected
+      if (err.message === 'Request aborted') {
+        console.log('[upload-clip] multer: request aborted by client');
+        return;
+      }
+      console.error('[upload-clip] multer error:', err.message);
       return res.status(400).json({ error: err.message });
     }
+    console.log('[upload-clip] multer: file received ok');
     next();
   });
 }, async (req, res) => {
-  if (req.destroyed || res.headersSent) return;
+  if (req.destroyed || res.headersSent) {
+    console.log('[upload-clip] request already destroyed or headers sent, bailing');
+    return;
+  }
+
   const { identifier, prompt } = req.body;
   const file = req.file;
+
+  console.log('[upload-clip] body:', { identifier, prompt });
+  console.log('[upload-clip] file:', file ? { originalname: file.originalname, mimetype: file.mimetype, size: file.size, path: file.path } : 'MISSING');
 
   if (!identifier || !prompt || !file) {
     if (file) await unlink(file.path).catch(() => {});
@@ -450,51 +463,62 @@ router.post('/upload-clip', (req, res, next) => {
   const outputPath = join(os.tmpdir(), `${randomBytes(8).toString('hex')}.webm`);
 
   try {
+    console.log('[upload-clip] looking up submission:', identifier);
     const sub = await Submission.findOne({ identifier });
     if (!sub) {
+      console.log('[upload-clip] submission not found:', identifier);
       await unlink(file.path).catch(() => {});
       return res.status(404).json({ error: 'Submission not found' });
     }
+    console.log('[upload-clip] submission found:', sub.identifier);
 
-    // Convert to webm (skip if already webm)
     const isWebm = /\.webm$/i.test(file.originalname) || file.mimetype === 'video/webm';
     const uploadPath = isWebm ? file.path : outputPath;
+    console.log('[upload-clip] isWebm:', isWebm, '| uploadPath:', uploadPath);
 
     if (!isWebm) {
+      console.log('[upload-clip] starting ffmpeg conversion...');
       await new Promise((resolve, reject) => {
         ffmpeg(file.path)
           .outputFormat('webm')
           .videoCodec('libvpx')
           .audioCodec('libopus')
           .outputOptions(['-cpu-used 5', '-deadline realtime', '-crf 10', '-b:v 1M'])
-          .on('end', resolve)
-          .on('error', (err) => reject(err))
+          .on('start', (cmd) => console.log('[upload-clip] ffmpeg command:', cmd))
+          .on('progress', (p) => console.log(`[upload-clip] ffmpeg progress: ${JSON.stringify(p)}`))
+          .on('end', () => { console.log('[upload-clip] ffmpeg conversion done'); resolve(); })
+          .on('error', (err) => { console.error('[upload-clip] ffmpeg error:', err.message); reject(err); })
           .save(outputPath);
       });
       await unlink(file.path).catch(() => {});
     }
 
-    // Delete existing S3 clip for this prompt if present
     const clipKey = `p${promptNum}`;
     const existingKey = sub.clips?.get(clipKey);
     if (existingKey) {
-      await deleteObject(existingKey).catch((err) => console.error('Failed to delete old clip:', err));
+      console.log('[upload-clip] deleting old S3 clip:', existingKey);
+      await deleteObject(existingKey).catch((err) => console.error('[upload-clip] failed to delete old clip:', err));
     }
 
     const s3Key = `sharon-bday/prompt-${promptNum}/${identifier}-p${promptNum}.webm`;
+    console.log('[upload-clip] uploading to S3:', s3Key, '| from:', uploadPath);
     await uploadFile(s3Key, uploadPath, 'video/webm');
+    console.log('[upload-clip] S3 upload done');
+
     await unlink(uploadPath).catch(() => {});
 
+    console.log('[upload-clip] saving to DB...');
     sub.clips.set(clipKey, s3Key);
     sub.markModified('clips');
     if (!sub.completedPrompts.includes(promptNum)) {
       sub.completedPrompts.push(promptNum);
     }
     await sub.save();
+    console.log('[upload-clip] DB save done, responding success');
 
     return res.json({ success: true, s3Key });
   } catch (err) {
-    console.error('POST /admin/upload-clip error:', err);
+    console.error('[upload-clip] caught error:', err);
     await unlink(file.path).catch(() => {});
     await unlink(outputPath).catch(() => {});
     return res.status(500).json({ error: 'Failed to process video: ' + err.message });

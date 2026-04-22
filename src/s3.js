@@ -100,6 +100,7 @@ export async function deleteObject(key) {
  */
 export async function uploadFile(key, filePath, contentType) {
   const { size } = await stat(filePath);
+  console.log(`[s3:uploadFile] starting | key=${key} size=${size} contentType=${contentType}`);
   const command = new PutObjectCommand({
     Bucket: BUCKET(),
     Key: key,
@@ -108,6 +109,7 @@ export async function uploadFile(key, filePath, contentType) {
     ContentLength: size,
   });
   await s3.send(command);
+  console.log(`[s3:uploadFile] done | key=${key}`);
 }
 
 /**
