@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { readFile, unlink } from 'fs/promises';
+import { unlink } from 'fs/promises';
 import { join } from 'path';
 import os from 'os';
 import { randomBytes } from 'crypto';
@@ -12,7 +12,7 @@ import ffmpegPath from 'ffmpeg-static';
 import { Submission } from '../models/Submission.js';
 import { Setting } from '../models/Setting.js';
 import { adminAuth } from '../middleware/auth.js';
-import { getPresignedGetUrl, listObjects, getObjectStream, deleteObject, uploadBuffer } from '../s3.js';
+import { getPresignedGetUrl, listObjects, getObjectStream, deleteObject, uploadFile } from '../s3.js';
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
@@ -458,11 +458,9 @@ router.post('/upload-clip', (req, res, next) => {
 
     // Convert to webm (skip if already webm)
     const isWebm = /\.webm$/i.test(file.originalname) || file.mimetype === 'video/webm';
-    let webmBuffer;
-    if (isWebm) {
-      webmBuffer = await readFile(file.path);
-      await unlink(file.path).catch(() => {});
-    } else {
+    const uploadPath = isWebm ? file.path : outputPath;
+
+    if (!isWebm) {
       await new Promise((resolve, reject) => {
         ffmpeg(file.path)
           .outputFormat('webm')
@@ -474,8 +472,6 @@ router.post('/upload-clip', (req, res, next) => {
           .save(outputPath);
       });
       await unlink(file.path).catch(() => {});
-      webmBuffer = await readFile(outputPath);
-      await unlink(outputPath).catch(() => {});
     }
 
     // Delete existing S3 clip for this prompt if present
@@ -486,7 +482,8 @@ router.post('/upload-clip', (req, res, next) => {
     }
 
     const s3Key = `sharon-bday/prompt-${promptNum}/${identifier}-p${promptNum}.webm`;
-    await uploadBuffer(s3Key, webmBuffer, 'video/webm');
+    await uploadFile(s3Key, uploadPath, 'video/webm');
+    await unlink(uploadPath).catch(() => {});
 
     sub.clips.set(clipKey, s3Key);
     sub.markModified('clips');
