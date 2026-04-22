@@ -28,6 +28,18 @@ const upload = multer({
   },
 });
 
+const uploadPhoto = multer({
+  dest: os.tmpdir(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (/\.(jpe?g|png|webp|heic)$/i.test(file.originalname) || file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed (jpg, png, webp, heic)'));
+    }
+  },
+});
+
 const router = Router();
 
 // ---------------------------------------------------------------------------
@@ -438,11 +450,6 @@ router.post('/upload-clip', (req, res, next) => {
     next();
   });
 }, async (req, res) => {
-  if (req.destroyed || res.headersSent) {
-    console.log('[upload-clip] request already destroyed or headers sent, bailing');
-    return;
-  }
-
   const { identifier, prompt } = req.body;
   const file = req.file;
 
@@ -522,6 +529,61 @@ router.post('/upload-clip', (req, res, next) => {
     await unlink(file.path).catch(() => {});
     await unlink(outputPath).catch(() => {});
     return res.status(500).json({ error: 'Failed to process video: ' + err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /admin/upload-photo  — upload an image and add it to a submission
+// ---------------------------------------------------------------------------
+
+router.post('/upload-photo', (req, res, next) => {
+  console.log('[upload-photo] multer: receiving file...');
+  uploadPhoto.single('file')(req, res, (err) => {
+    if (err) {
+      if (err.message === 'Request aborted') { console.log('[upload-photo] request aborted'); return; }
+      console.error('[upload-photo] multer error:', err.message);
+      return res.status(400).json({ error: err.message });
+    }
+    console.log('[upload-photo] multer: file received ok');
+    next();
+  });
+}, async (req, res) => {
+  const { identifier, wish } = req.body;
+  const file = req.file;
+
+  console.log('[upload-photo] body:', { identifier, wish });
+  console.log('[upload-photo] file:', file ? { originalname: file.originalname, mimetype: file.mimetype, size: file.size } : 'MISSING');
+
+  if (!identifier || !file) {
+    if (file) await unlink(file.path).catch(() => {});
+    return res.status(400).json({ error: 'identifier and file are required' });
+  }
+
+  try {
+    const sub = await Submission.findOne({ identifier });
+    if (!sub) {
+      await unlink(file.path).catch(() => {});
+      return res.status(404).json({ error: 'Submission not found' });
+    }
+
+    const photoIndex = (sub.photos?.length ?? 0) + 1;
+    const ext = file.originalname.split('.').pop().toLowerCase() || 'jpg';
+    const s3Key = `sharon-bday/photos/${identifier}-${photoIndex}.${ext}`;
+
+    console.log('[upload-photo] uploading to S3:', s3Key);
+    await uploadFile(s3Key, file.path, file.mimetype);
+    await unlink(file.path).catch(() => {});
+    console.log('[upload-photo] S3 upload done');
+
+    sub.photos.push({ url: s3Key, wish: wish || '' });
+    await sub.save();
+    console.log('[upload-photo] DB save done');
+
+    return res.json({ success: true, s3Key });
+  } catch (err) {
+    console.error('[upload-photo] error:', err);
+    await unlink(file.path).catch(() => {});
+    return res.status(500).json({ error: 'Failed to upload photo: ' + err.message });
   }
 });
 
