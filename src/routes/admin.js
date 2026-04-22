@@ -20,10 +20,10 @@ const upload = multer({
   dest: os.tmpdir(),
   limits: { fileSize: 500 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    if (/\.(mp4|mov)$/i.test(file.originalname) || ['video/mp4', 'video/quicktime'].includes(file.mimetype)) {
+    if (/\.(mp4|mov|webm)$/i.test(file.originalname) || ['video/mp4', 'video/quicktime', 'video/webm'].includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Only .mp4 and .mov files are allowed'));
+      cb(new Error('Only .mp4, .mov, and .webm files are allowed'));
     }
   },
 });
@@ -456,20 +456,26 @@ router.post('/upload-clip', (req, res, next) => {
       return res.status(404).json({ error: 'Submission not found' });
     }
 
-    // Convert to webm
-    await new Promise((resolve, reject) => {
-      ffmpeg(file.path)
-        .outputFormat('webm')
-        .videoCodec('libvpx')
-        .audioCodec('libopus')
-        .on('end', resolve)
-        .on('error', reject)
-        .save(outputPath);
-    });
-
-    await unlink(file.path).catch(() => {});
-    const webmBuffer = await readFile(outputPath);
-    await unlink(outputPath).catch(() => {});
+    // Convert to webm (skip if already webm)
+    const isWebm = /\.webm$/i.test(file.originalname) || file.mimetype === 'video/webm';
+    let webmBuffer;
+    if (isWebm) {
+      webmBuffer = await readFile(file.path);
+      await unlink(file.path).catch(() => {});
+    } else {
+      await new Promise((resolve, reject) => {
+        ffmpeg(file.path)
+          .outputFormat('webm')
+          .videoCodec('libvpx')
+          .audioCodec('libopus')
+          .on('end', resolve)
+          .on('error', reject)
+          .save(outputPath);
+      });
+      await unlink(file.path).catch(() => {});
+      webmBuffer = await readFile(outputPath);
+      await unlink(outputPath).catch(() => {});
+    }
 
     // Delete existing S3 clip for this prompt if present
     const clipKey = `p${promptNum}`;
