@@ -62,9 +62,12 @@ app.use((_req, res) => {
 
 // Global error handler
 // eslint-disable-next-line no-unused-vars
-app.use((err, _req, res, _next) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ error: 'Internal server error' });
+app.use((err, req, res, _next) => {
+  if (err.message === 'Request aborted') return; // multer: client disconnected mid-upload
+  console.error(`Unhandled error on ${req.method} ${req.path}:`, err);
+  if (!res.headersSent) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // ---------------------------------------------------------------------------
