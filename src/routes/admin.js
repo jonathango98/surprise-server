@@ -468,8 +468,9 @@ router.post('/upload-clip', (req, res, next) => {
           .outputFormat('webm')
           .videoCodec('libvpx')
           .audioCodec('libopus')
+          .outputOptions(['-cpu-used 5', '-deadline realtime', '-crf 10', '-b:v 1M'])
           .on('end', resolve)
-          .on('error', reject)
+          .on('error', (err) => reject(err))
           .save(outputPath);
       });
       await unlink(file.path).catch(() => {});
