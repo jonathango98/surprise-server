@@ -18,7 +18,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 
 const upload = multer({
   dest: os.tmpdir(),
-  limits: { fileSize: 500 * 1024 * 1024 },
+  limits: { fileSize: 1024 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (/\.(mp4|mov|webm)$/i.test(file.originalname) || ['video/mp4', 'video/quicktime', 'video/webm'].includes(file.mimetype)) {
       cb(null, true);
@@ -30,7 +30,7 @@ const upload = multer({
 
 const uploadPhoto = multer({
   dest: os.tmpdir(),
-  limits: { fileSize: 20 * 1024 * 1024 },
+  limits: { fileSize: 100 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (/\.(jpe?g|png|webp|heic)$/i.test(file.originalname) || file.mimetype.startsWith('image/')) {
       cb(null, true);
