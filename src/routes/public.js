@@ -4,6 +4,7 @@ import { Setting } from '../models/Setting.js';
 import { getPresignedPutUrl } from '../s3.js';
 import { deadlineGuard } from '../middleware/deadline.js';
 import { presignRateLimiter } from '../middleware/rateLimiter.js';
+import { logActivity } from '../activityLog.js';
 
 const router = Router();
 
@@ -107,6 +108,7 @@ router.post('/session', async (req, res) => {
     if (submission) {
       if (submission.status === 'deleted') {
         // Reactivate the deleted submission
+        const now = new Date();
         await Submission.updateOne(
           { identifier },
           {
@@ -114,13 +116,16 @@ router.post('/session', async (req, res) => {
               status: 'active',
               firstName: normalise(firstName),
               lastName: normalise(lastName),
-              submittedAt: new Date(),
+              submittedAt: now,
+              lastActivityAt: now,
               completedPrompts: [],
               clips: {},
               photos: [],
             },
           }
         );
+
+        await logActivity('new_account', identifier, `${normalise(firstName)} ${normalise(lastName)}`);
 
         return res.status(201).json({
           isReturning: false,
@@ -129,6 +134,8 @@ router.post('/session', async (req, res) => {
           photoCount: 0,
         });
       }
+
+      await logActivity('user_login', submission.identifier, `${submission.firstName} ${submission.lastName}`);
 
       return res.json({
         isReturning: true,
@@ -147,6 +154,8 @@ router.post('/session', async (req, res) => {
       clips: {},
       photos: [],
     });
+
+    await logActivity('new_account', identifier, `${normalise(firstName)} ${normalise(lastName)}`);
 
     return res.status(201).json({
       isReturning: false,
@@ -214,10 +223,11 @@ router.post('/submit-clip', async (req, res) => {
   try {
     const clipField = `clips.p${promptNum}`;
 
+    const now = new Date();
     const submission = await Submission.findOneAndUpdate(
       { identifier },
       {
-        $set: { [clipField]: s3Key },
+        $set: { [clipField]: s3Key, lastActivityAt: now },
         $addToSet: { completedPrompts: promptNum },
       },
       { new: true }
@@ -226,6 +236,9 @@ router.post('/submit-clip', async (req, res) => {
     if (!submission) {
       return res.status(404).json({ error: 'Submission not found' });
     }
+
+    const displayName = `${submission.firstName} ${submission.lastName}`;
+    await logActivity('clip_upload', identifier, displayName, `Prompt ${promptNum}`);
 
     return res.json({ success: true, completedPrompts: submission.completedPrompts });
   } catch (err) {
@@ -278,10 +291,12 @@ router.post('/submit-photo', async (req, res) => {
   }
 
   try {
+    const now = new Date();
     const submission = await Submission.findOneAndUpdate(
       { identifier },
       {
         $push: { photos: { url: s3Key, wish: wish || '' } },
+        $set: { lastActivityAt: now },
       },
       { new: true }
     );
@@ -289,6 +304,9 @@ router.post('/submit-photo', async (req, res) => {
     if (!submission) {
       return res.status(404).json({ error: 'Submission not found' });
     }
+
+    const displayName = `${submission.firstName} ${submission.lastName}`;
+    await logActivity('photo_upload', identifier, displayName);
 
     return res.json({ success: true });
   } catch (err) {

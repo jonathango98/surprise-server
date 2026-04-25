@@ -11,8 +11,10 @@ import ffmpeg from 'fluent-ffmpeg';
 import ffmpegPath from 'ffmpeg-static';
 import { Submission } from '../models/Submission.js';
 import { Setting } from '../models/Setting.js';
+import { ActivityLog } from '../models/ActivityLog.js';
 import { adminAuth } from '../middleware/auth.js';
 import { getPresignedGetUrl, listObjects, getObjectStream, deleteObject, uploadFile } from '../s3.js';
+import { logActivity } from '../activityLog.js';
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
@@ -62,6 +64,8 @@ router.post('/login', async (req, res) => {
     process.env.ADMIN_JWT_SECRET,
     { expiresIn: '24h' }
   );
+
+  await logActivity('admin_login', 'admin', 'Admin');
 
   return res.json({ token });
 });
@@ -129,6 +133,7 @@ router.get('/submissions', async (req, res) => {
       lastName: s.lastName,
       location: s.location,
       submittedAt: s.submittedAt,
+      lastActivityAt: s.lastActivityAt || s.submittedAt,
       completedPrompts: s.completedPrompts,
       photoCount: Array.isArray(s.photos) ? s.photos.length : 0,
     }));
@@ -520,8 +525,11 @@ router.post('/upload-clip', (req, res, next) => {
     if (!sub.completedPrompts.includes(promptNum)) {
       sub.completedPrompts.push(promptNum);
     }
+    sub.lastActivityAt = new Date();
     await sub.save();
     console.log('[upload-clip] DB save done, responding success');
+
+    await logActivity('clip_upload', identifier, `${sub.firstName} ${sub.lastName}`, `Prompt ${promptNum} (admin upload)`);
 
     return res.json({ success: true, s3Key });
   } catch (err) {
@@ -576,14 +584,35 @@ router.post('/upload-photo', (req, res, next) => {
     console.log('[upload-photo] S3 upload done');
 
     sub.photos.push({ url: s3Key, wish: wish || '' });
+    sub.lastActivityAt = new Date();
     await sub.save();
     console.log('[upload-photo] DB save done');
+
+    await logActivity('photo_upload', identifier, `${sub.firstName} ${sub.lastName}`, 'admin upload');
 
     return res.json({ success: true, s3Key });
   } catch (err) {
     console.error('[upload-photo] error:', err);
     await unlink(file.path).catch(() => {});
     return res.status(500).json({ error: 'Failed to upload photo: ' + err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /admin/activity-log
+// ---------------------------------------------------------------------------
+
+router.get('/activity-log', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit || '100', 10), 500);
+    const logs = await ActivityLog.find({})
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+    return res.json(logs);
+  } catch (err) {
+    console.error('GET /admin/activity-log error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
