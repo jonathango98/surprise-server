@@ -18,5 +18,11 @@ export async function connectDB() {
     console.warn('MongoDB disconnected');
   });
 
-  await mongoose.connect(uri);
+  await mongoose.connect(uri, {
+    // Default heartbeat is every 10s, which counts as outbound traffic and
+    // keeps resetting Railway's idle-sleep timer. Slow it down so the app
+    // can actually go quiet between requests.
+    heartbeatFrequencyMS: 10 * 60 * 1000,
+    maxPoolSize: 5,
+  });
 }

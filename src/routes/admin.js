@@ -5,10 +5,7 @@ import os from 'os';
 import { randomBytes } from 'crypto';
 
 import jwt from 'jsonwebtoken';
-import archiver from 'archiver';
 import multer from 'multer';
-import ffmpeg from 'fluent-ffmpeg';
-import ffmpegPath from 'ffmpeg-static';
 import { Submission } from '../models/Submission.js';
 import { Setting } from '../models/Setting.js';
 import { ActivityLog } from '../models/ActivityLog.js';
@@ -16,7 +13,22 @@ import { adminAuth } from '../middleware/auth.js';
 import { getPresignedGetUrl, listObjects, getObjectStream, deleteObject, uploadFile } from '../s3.js';
 import { logActivity } from '../activityLog.js';
 
-ffmpeg.setFfmpegPath(ffmpegPath);
+// archiver and fluent-ffmpeg/ffmpeg-static are only needed by a couple of
+// rarely-used admin routes (zip export, video transcode). Load them on first
+// use instead of at boot so they don't sit in every instance's memory.
+let ffmpegPromise;
+async function getFfmpeg() {
+  if (!ffmpegPromise) {
+    ffmpegPromise = Promise.all([
+      import('fluent-ffmpeg'),
+      import('ffmpeg-static'),
+    ]).then(([{ default: ffmpeg }, { default: ffmpegPath }]) => {
+      ffmpeg.setFfmpegPath(ffmpegPath);
+      return ffmpeg;
+    });
+  }
+  return ffmpegPromise;
+}
 
 const upload = multer({
   dest: os.tmpdir(),
@@ -397,6 +409,7 @@ router.get('/download', async (req, res) => {
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
+    const { default: archiver } = await import('archiver');
     const archive = archiver('zip', { zlib: { level: 6 } });
 
     archive.on('error', (err) => {
@@ -490,6 +503,7 @@ router.post('/upload-clip', (req, res, next) => {
 
     if (!isWebm) {
       console.log('[upload-clip] starting ffmpeg conversion...');
+      const ffmpeg = await getFfmpeg();
       await new Promise((resolve, reject) => {
         ffmpeg(file.path)
           .outputFormat('webm')
